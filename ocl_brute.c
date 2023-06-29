@@ -532,7 +532,7 @@ int ocl_brute_lfcs(cl_uint lfcs_template, cl_ushort newflag, const cl_uint *ver,
 			if (out) {
 				get_hp_time(&t1); td = hp_time_diff(&t0, &t1);
 				lfcs += out >> 16;
-				printf("got a hit: %s (rand: 0x%04x) at offset: %d\n", hexdump(&lfcs, 4, 0), out & 0xffff, lfcs_offset);
+				printf("got a hit: %s (rand: 0x%04x) at offset: %d\n", hexdump(&lfcs, 4, 0), out & 0xffff, fan);
 				u8 part1[0x1000]={0};
 				memcpy(part1, &lfcs, 4);
 				memcpy(part1+4, &newflag, 2);
