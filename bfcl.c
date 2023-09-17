@@ -29,7 +29,8 @@ int main(int argc, const char *argv[]) {
 		cl_uint num_platforms;
 		ocl_info(&num_platforms, 1);
 	// Extremely condensed argument parsing incoming!
-	} else if (((argc == 7 && !strcmp(argv[1], "msky")) && (!strcmp(argv[6], "sws") || !strcmp(argv[6], "rws"))) || ((argc == 8 && !strcmp(argv[1], "msky")) && ((!strcmp(argv[6], "sws") && !strcmp(argv[7], "sm")) || (!strcmp(argv[6], "rws") && !strcmp(argv[7], "sm"))))) {
+	} else if (((argc == 7 && !strcmp(argv[1], "msky")) && (!strcmp(argv[6], "sws") || !strcmp(argv[6], "rws"))) ||
+			((argc == 8 && !strcmp(argv[1], "msky")) && ((!strcmp(argv[6], "sws") && !strcmp(argv[7], "sm")) || (!strcmp(argv[6], "rws") && !strcmp(argv[7], "sm"))))) {
 		uint32_t msky[4], ver[4], msky_offset, msky_max_offset;
 		hex2bytes((unsigned char*)msky, 16, argv[2], 1);
 		hex2bytes((unsigned char*)ver, 16, argv[3], 1);
@@ -43,7 +44,8 @@ int main(int argc, const char *argv[]) {
 		}
 		ret = ocl_brute_msky(msky, ver, msky_offset, msky_max_offset);
 	// More extremely condensed argument parsing incoming!
-	} else if (((argc == 7 && !strcmp(argv[1], "lfcs")) && (!strcmp(argv[6], "sws") || !strcmp(argv[6], "rws"))) || ((argc == 8 && !strcmp(argv[1], "msky")) && ((!strcmp(argv[6], "sws") && !strcmp(argv[7], "sm")) || (!strcmp(argv[6], "rws") && !strcmp(argv[7], "sm"))))) {
+	} else if (((argc == 7 && !strcmp(argv[1], "lfcs")) && (!strcmp(argv[6], "sws") || !strcmp(argv[6], "rws"))) ||
+			((argc == 8 && !strcmp(argv[1], "lfcs")) && ((!strcmp(argv[6], "sws") && !strcmp(argv[7], "sm")) || (!strcmp(argv[6], "rws") && !strcmp(argv[7], "sm"))))) {
 		uint32_t lfcs, ver[2], lfcs_offset;
 		uint16_t newflag;
 		hex2bytes((unsigned char*)&lfcs, 4, argv[2], 1);
