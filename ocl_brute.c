@@ -447,7 +447,7 @@ int ocl_brute_msky(const cl_uint *msky, const cl_uint *ver, cl_uint msky_offset,
 }
 
 // LFCS brute force, https://gist.github.com/zoogie/4046726878dba89eddfa1fc07c8a27da
-int ocl_brute_lfcs(cl_uint lfcs_template, cl_ushort newflag, const cl_uint *ver, cl_uint lfcs_offset)
+int ocl_brute_lfcs(cl_uint lfcs_template, cl_ushort newflag, const cl_uint *ver, cl_uint lfcs_offset, int upper_bound, int lower_bound)
 {
 	TimeHP t0, t1; long long td = 0;
 
@@ -501,8 +501,13 @@ int ocl_brute_lfcs(cl_uint lfcs_template, cl_ushort newflag, const cl_uint *ver,
 	get_hp_time(&t0);
 	int fan_range = 0x10000; // "fan out" full 16 bits
 	unsigned i, j,k=0;
-	int upper_bound = newflag ? 0x05000000>>16 : 0x0B000000>>16;  //these upper bounds are safe bets now, but that may
-	int lower_bound = 0;                                          //change as time passes. will need to update
+	if (upper_bound == 0 && lower_bound == 0) { // use default
+		upper_bound = newflag ? 0x05000000>>16 : 0x0B000000>>16;  //these upper bounds are safe bets now, but that may
+		lower_bound = 0;                                          //change as time passes. will need to update
+	} else {
+		upper_bound >>= 16;
+		lower_bound >>= 16;
+	}
 	//lfcs_template=0;  //debug
 	u32 lfcs_block = lfcs_template>>16;
 	for (j = lfcs_offset; j < fan_range; ++j) {
