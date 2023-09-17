@@ -1,3 +1,5 @@
+#define _BFCL_C
+
 #include <string.h>
 #include <stdio.h>
 #include "utils.h"

@@ -10,7 +10,11 @@
 typedef LARGE_INTEGER TimeHP;
 #define get_hp_time QueryPerformanceCounter
 
+#ifdef __MINGW64__
+#define LL "ll"
+#else
 #define LL "I64"
+#endif
 
 #else
 
@@ -40,11 +44,19 @@ int rdrand_fill(unsigned long long *p, size_t size);
 
 char * trim(char *in);
 
+#ifdef _BFCL_C
 uint32_t stop_bfcl;
 
 uint32_t seedminer_mode;
 
 uint32_t reduced_work_size_mode;
+#else
+extern uint32_t stop_bfcl;
+
+extern uint32_t seedminer_mode;
+
+extern uint32_t reduced_work_size_mode;
+#endif
 
 void real_sleep(int sleep_sec);
 
