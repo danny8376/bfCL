@@ -17,19 +17,12 @@ static inline cl_ushort u16be(const unsigned char *in){
 }
 
 const char invalid_parameters[] = "invalid parameters\n";
+const char worker_dummy_argv0[] = ">>>";
 
-int main(int argc, const char *argv[]) {
-	stop_bfcl = 0; // Not really used at the moment
-	seedminer_mode = 0;
-	reduced_work_size_mode = 0;
+int parse_and_run(int argc, const char *argv[]) {
 	int ret = 0;
-	if (argc == 1) {
-		ret = ocl_test();
-	} else if (argc == 2 && !strcmp(argv[1], "info")) {
-		cl_uint num_platforms;
-		ocl_info(&num_platforms, 1);
 	// Extremely condensed argument parsing incoming!
-	} else if (((argc == 7 && !strcmp(argv[1], "msky")) && (!strcmp(argv[6], "sws") || !strcmp(argv[6], "rws"))) ||
+	if (((argc == 7 && !strcmp(argv[1], "msky")) && (!strcmp(argv[6], "sws") || !strcmp(argv[6], "rws"))) ||
 			((argc == 8 && !strcmp(argv[1], "msky")) && ((!strcmp(argv[6], "sws") && !strcmp(argv[7], "sm")) || (!strcmp(argv[6], "rws") && !strcmp(argv[7], "sm"))))) {
 		uint32_t msky[4], ver[4], msky_offset, msky_max_offset;
 		hex2bytes((unsigned char*)msky, 16, argv[2], 1);
@@ -116,6 +109,70 @@ int main(int argc, const char *argv[]) {
 	} else {
 		printf(invalid_parameters);
 		ret = -1;
+	}
+	return ret;
+}
+
+void worker_loop() {
+	char buf[256];
+	int argc = 1, ret;
+	char *argv[16], c, *p, *arg;
+	argv[0] = (char *)worker_dummy_argv0;
+	printf("worker mode enabled\n");
+	while (1) {
+		printf(">>> ");
+		fgets(buf, 256, stdin);
+		if (strlen(buf) == 255) while ((c = fgetc(stdin)) != EOF && c != '\n');
+		argc = 1;
+		for (p=buf, arg=p; p<buf+256 && argc<=16; p++) {
+			if (*p == ' ' || *p == 0 || *p == '\r' || *p == '\n') {
+				argv[argc++] = arg;
+				if (*p == 0) {
+					break;
+				} else if (*p == '\r' || *p == '\n') {
+					*p = 0;
+					break;
+				} else {
+					*p = 0;
+				}
+				for (arg=++p; *p == ' '; arg=++p);
+			}
+		}
+		if (argc == 2 && !strcmp(argv[1], "exit")) {
+			printf("Exit.\n");
+			break;
+		} else {
+			ret = parse_and_run(argc, (const char **)argv);
+			printf("||| %d\n", ret);
+		}
+	}
+}
+
+int main(int argc, const char *argv[]) {
+	stop_bfcl = 0; // Not really used at the moment
+	seedminer_mode = 0;
+	reduced_work_size_mode = 0;
+	stdio_mode = 0;
+	int ret = 0;
+	if (argc == 1) {
+		ret = ocl_test();
+	} else if (argc == 2 && !strcmp(argv[1], "info")) {
+		cl_uint num_platforms;
+		ocl_info(&num_platforms, 1);
+	} else if (((argc == 3 && !strcmp(argv[1], "worker")) && (!strcmp(argv[2], "sws") || !strcmp(argv[2], "rws"))) ||
+			((argc == 4 && !strcmp(argv[1], "worker")) && (!strcmp(argv[2], "sws") || !strcmp(argv[2], "rws")) && (!strcmp(argv[3], "stdio")))) {
+		worker_mode = 1;
+		if ((argc == 3 || argc == 4) && !strcmp(argv[2], "rws")) {
+			reduced_work_size_mode = 1;
+		}
+		if (argc == 4 && !strcmp(argv[3], "stdio")) {
+			stdio_mode = 1;
+		}
+		worker_loop();
+		ocl_brute_free_worker();
+		ret = 0;
+	} else {
+		ret = parse_and_run(argc, argv);
 	}
 	return ret;
 }

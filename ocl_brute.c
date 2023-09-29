@@ -32,6 +32,10 @@ static cl_ulong from_bcd(cl_ulong i) {
 	return o;
 }
 
+static cl_context worker_context[4] = {NULL};
+static cl_program worker_program[4] = {NULL};
+static cl_program worker_cid_program[4] = {NULL};
+
 int ocl_brute_console_id(const cl_uchar *console_id, const cl_uchar *emmc_cid,
 	cl_uint offset0, const cl_uchar *src0, const cl_uchar *ver0,
 	cl_uint offset1, const cl_uchar *src1, const cl_uchar *ver1,
@@ -67,36 +71,47 @@ int ocl_brute_console_id(const cl_uchar *console_id, const cl_uchar *emmc_cid,
 	TimeHP t0, t1; long long td = 0;
 
 	cl_int err;
-	cl_platform_id platform_id;
-	cl_device_id device_id;
-	ocl_get_device(&platform_id, &device_id);
+	static cl_platform_id platform_id = NULL;
+	static cl_device_id device_id = NULL;
+	static cl_context context = NULL;
 	if (platform_id == NULL || device_id == NULL) {
-		return -1;
+		ocl_get_device(&platform_id, &device_id);
+		if (platform_id == NULL || device_id == NULL) {
+			return -1;
+		}
+
+		context = OCL_ASSERT2(clCreateContext(0, 1, &device_id, NULL, NULL, &err));
+		worker_context[0] = context;
 	}
+	cl_program program = NULL;
+	if (worker_cid_program[mode] == NULL) {
+		const char *source_names[] = {
+			"cl/common.h",
+			"cl/aes_tables.cl",
+			"cl/aes_128.cl",
+			"cl/dsi.h",
+			"cl/bcd.h",
+			emmc_cid != 0 ? "cl/kernel_console_id.cl" : "cl/kernel_console_id_ds3.cl" };
+		const char * options;
+		if (mode == NORMAL) {
+			options = "-w -Werror";
+		} else if (mode == BCD) {
+			options = "-w -Werror -DBCD";
+		} else if (mode == CTR) {
+			options = "-w -Werror -DCTR";
+		} else {
+			return -1;
+		}
 
-	cl_context context = OCL_ASSERT2(clCreateContext(0, 1, &device_id, NULL, NULL, &err));
-	cl_command_queue command_queue = OCL_ASSERT2(clCreateCommandQueue(context, device_id, 0, &err));
+		program = ocl_build_from_sources(sizeof(source_names) / sizeof(char *),
+			source_names, context, device_id, options);
 
-	const char *source_names[] = {
-		"cl/common.h",
-		"cl/aes_tables.cl",
-		"cl/aes_128.cl",
-		"cl/dsi.h",
-		"cl/bcd.h",
-		emmc_cid != 0 ? "cl/kernel_console_id.cl" : "cl/kernel_console_id_ds3.cl" };
-	const char * options;
-	if (mode == NORMAL) {
-		options = "-w -Werror";
-	} else if (mode == BCD) {
-		options = "-w -Werror -DBCD";
-	} else if (mode == CTR) {
-		options = "-w -Werror -DCTR";
+		worker_cid_program[mode] = program;
 	} else {
-		return -1;
+		program = worker_cid_program[mode];
 	}
-	cl_program program = ocl_build_from_sources(sizeof(source_names) / sizeof(char *),
-		source_names, context, device_id, options);
 
+	cl_command_queue command_queue = OCL_ASSERT2(clCreateCommandQueue(context, device_id, 0, &err));
 	cl_kernel kernel = OCL_ASSERT2(clCreateKernel(program, emmc_cid != 0 ? "test_console_id" : "test_console_id_ds3", &err));
 
 	size_t local;
@@ -181,10 +196,18 @@ int ocl_brute_console_id(const cl_uchar *console_id, const cl_uchar *emmc_cid,
 		if (out) {
 			get_hp_time(&t1); td = hp_time_diff(&t0, &t1);
 			printf("got a hit: %016"LL"x\n", (unsigned long long) out);
-			// also write to a file
-			dump_to_file(emmc_cid ? hexdump(emmc_cid, 16, 0) : hexdump(src0, 16, 0), &out, 8);
+			if (stdio_mode) {
+				printf("<<< %016"LL"x\n", (unsigned long long) out);
+			} else {
+				// also write to a file
+				dump_to_file(emmc_cid ? hexdump(emmc_cid, 16, 0) : hexdump(src0, 16, 0), &out, 8);
+			}
 			break;
 		}
+	}
+
+	if (!out && stdio_mode) {
+		printf("<<< NOHIT\n");
 	}
 
 	u64 tested = 0;
@@ -201,9 +224,11 @@ int ocl_brute_console_id(const cl_uchar *console_id, const cl_uchar *emmc_cid,
 
 	clReleaseKernel(kernel);
 	clReleaseMemObject(mem_out);
-	clReleaseProgram(program);
 	clReleaseCommandQueue(command_queue);
-	clReleaseContext(context);
+	if (!worker_mode) {
+		clReleaseProgram(program);
+		clReleaseContext(context);
+	}
 	return !out;
 }
 
@@ -235,23 +260,30 @@ int ocl_brute_emmc_cid(const cl_uchar *console_id, cl_uchar *emmc_cid,
 	TimeHP t0, t1; long long td = 0;
 
 	cl_int err;
-	cl_platform_id platform_id;
-	cl_device_id device_id;
-	ocl_get_device(&platform_id, &device_id);
+	static cl_platform_id platform_id = NULL;
+	static cl_device_id device_id = NULL;
+	static cl_context context = NULL;
+	static cl_program program = NULL;
 	if (platform_id == NULL || device_id == NULL) {
-		return -1;
+		ocl_get_device(&platform_id, &device_id);
+		if (platform_id == NULL || device_id == NULL) {
+			return -1;
+		}
+
+		context = OCL_ASSERT2(clCreateContext(0, 1, &device_id, NULL, NULL, &err));
+
+		const char *source_names[] = {
+			"cl/common.h",
+			"cl/sha1_16.cl",
+			"cl/kernel_emmc_cid.cl" };
+		program = ocl_build_from_sources(sizeof(source_names) / sizeof(char *),
+			source_names, context, device_id, "-w -Werror");
+
+		worker_context[1] = context;
+		worker_program[1] = program;
 	}
 
-	cl_context context = OCL_ASSERT2(clCreateContext(0, 1, &device_id, NULL, NULL, &err));
 	cl_command_queue command_queue = OCL_ASSERT2(clCreateCommandQueue(context, device_id, 0, &err));
-
-	const char *source_names[] = {
-		"cl/common.h",
-		"cl/sha1_16.cl",
-		"cl/kernel_emmc_cid.cl" };
-	cl_program program = ocl_build_from_sources(sizeof(source_names) / sizeof(char *),
-		source_names, context, device_id, "-w -Werror");
-
 	cl_kernel kernel = OCL_ASSERT2(clCreateKernel(program, "test_emmc_cid", &err));
 
 	size_t local;
@@ -289,10 +321,18 @@ int ocl_brute_emmc_cid(const cl_uchar *console_id, cl_uchar *emmc_cid,
 			get_hp_time(&t1); td = hp_time_diff(&t0, &t1);
 			*(u32*)(emmc_cid + 1) |= out;
 			printf("got a hit: %s\n", hexdump(emmc_cid, 16, 0));
-			// also write to a file
-			dump_to_file(hexdump(console_id, 8, 0), emmc_cid, 16);
+			if (stdio_mode) {
+				printf("<<< %s\n", hexdump(emmc_cid, 16, 0));
+			} else {
+				// also write to a file
+				dump_to_file(hexdump(console_id, 8, 0), emmc_cid, 16);
+			}
 			break;
 		}
+	}
+
+	if (!out && stdio_mode) {
+		printf("<<< NOHIT\n");
 	}
 
 	u64 tested = 0;
@@ -306,9 +346,11 @@ int ocl_brute_emmc_cid(const cl_uchar *console_id, cl_uchar *emmc_cid,
 
 	clReleaseKernel(kernel);
 	clReleaseMemObject(mem_out);
-	clReleaseProgram(program);
 	clReleaseCommandQueue(command_queue);
-	clReleaseContext(context);
+	if (!worker_mode) {
+		clReleaseProgram(program);
+		clReleaseContext(context);
+	}
 	return !out;
 }
 
@@ -322,23 +364,31 @@ int ocl_brute_msky(const cl_uint *msky, const cl_uint *ver, cl_uint msky_offset,
 	TimeHP t0, t1; long long td = 0;
 
 	cl_int err;
-	cl_platform_id platform_id;
-	cl_device_id device_id;
-	ocl_get_device(&platform_id, &device_id);
+	static cl_platform_id platform_id = NULL;
+	static cl_device_id device_id = NULL;
+	static cl_context context = NULL;
+	static cl_program program = NULL;
 	if (platform_id == NULL || device_id == NULL) {
-		return -1;
+		ocl_get_device(&platform_id, &device_id);
+		if (platform_id == NULL || device_id == NULL) {
+			return -1;
+		}
+
+		context = OCL_ASSERT2(clCreateContext(0, 1, &device_id, NULL, NULL, &err));
+
+		const char *source_names[] = {
+			"cl/common.h",
+			"cl/sha256_16.cl",
+			"cl/kernel_msky.cl" };
+
+		program = ocl_build_from_sources(sizeof(source_names) / sizeof(char *),
+			source_names, context, device_id, "-w -Werror -DSHA256_16");
+
+		worker_context[2] = context;
+		worker_program[2] = program;
 	}
 
-	cl_context context = OCL_ASSERT2(clCreateContext(0, 1, &device_id, NULL, NULL, &err));
 	cl_command_queue command_queue = OCL_ASSERT2(clCreateCommandQueue(context, device_id, 0, &err));
-
-	const char *source_names[] = {
-		"cl/common.h",
-		"cl/sha256_16.cl",
-		"cl/kernel_msky.cl" };
-	cl_program program = ocl_build_from_sources(sizeof(source_names) / sizeof(char *),
-		source_names, context, device_id, "-w -Werror -DSHA256_16");
-
 	cl_kernel kernel = OCL_ASSERT2(clCreateKernel(program, "test_msky", &err));
 
 	size_t local;
@@ -392,10 +442,14 @@ int ocl_brute_msky(const cl_uint *msky, const cl_uint *ver, cl_uint msky_offset,
 				get_hp_time(&t1); td = hp_time_diff(&t0, &t1);
 				cl_uint msky_ret[4] = { msky[0], msky[1], out, msky3 };
 				printf("got a hit: %s at offset: %d\n", hexdump(msky_ret, 16, 0), msky3_offset);
-				u8 msed[0x140]={0};
-				memcpy(&msed[0x110], msky_ret, 16);
-				dump_to_file("movable.sed", msed, 0x140);
-				printf("movable.sed dumped to file!\n");
+				if (stdio_mode) {
+					printf("<<< %s\n", hexdump(msky_ret, 16, 0));
+				} else {
+					u8 msed[0x140]={0};
+					memcpy(&msed[0x110], msky_ret, 16);
+					dump_to_file("movable.sed", msed, 0x140);
+					printf("movable.sed dumped to file!\n");
+				}
 				struct msed_data{
 					u32 lfcs_blk;
 					s32 msed3offset;
@@ -425,6 +479,9 @@ int ocl_brute_msky(const cl_uint *msky, const cl_uint *ver, cl_uint msky_offset,
 		}
 		k++;
 	}
+	if (!out && stdio_mode) {
+		printf("<<< NOHIT\n");
+	}
 	u64 tested = 0;
 	if (!out) {
 		tested = (1ull << brute_bits) * k;
@@ -435,12 +492,14 @@ int ocl_brute_msky(const cl_uint *msky, const cl_uint *ver, cl_uint msky_offset,
 	printf("%.2f seconds, %.2f M/s\n", td / 1000000.0, tested * 1.0 / td);
 	clReleaseKernel(kernel);
 	clReleaseMemObject(mem_out);
-	clReleaseProgram(program);
 	clReleaseCommandQueue(command_queue);
-	clReleaseContext(context);
+	if (!worker_mode) {
+		clReleaseProgram(program);
+		clReleaseContext(context);
+	}
 	if (!out) { // Could any problems happen because of this?
 		printf("Max offset reached! Brute-forcing will now terminate!\n");
-		exit(101); // For lack of a better exit code
+		return 101; // For lack of a better exit code
 	} else {
 		return !out;
 	}
@@ -452,23 +511,31 @@ int ocl_brute_lfcs(cl_uint lfcs_template, cl_ushort newflag, const cl_uint *ver,
 	TimeHP t0, t1; long long td = 0;
 
 	cl_int err;
-	cl_platform_id platform_id;
-	cl_device_id device_id;
-	ocl_get_device(&platform_id, &device_id);
+	static cl_platform_id platform_id = NULL;
+	static cl_device_id device_id = NULL;
+	static cl_context context = NULL;
+	static cl_program program = NULL;
 	if (platform_id == NULL || device_id == NULL) {
-		return -1;
+		ocl_get_device(&platform_id, &device_id);
+		if (platform_id == NULL || device_id == NULL) {
+			return -1;
+		}
+
+		context = OCL_ASSERT2(clCreateContext(0, 1, &device_id, NULL, NULL, &err));
+
+		const char *source_names[] = {
+			"cl/common.h",
+			"cl/sha256_16.cl",
+			"cl/kernel_lfcs.cl" };
+
+		program = ocl_build_from_sources(sizeof(source_names) / sizeof(char *),
+			source_names, context, device_id, "-w -Werror -DSHA256_12");
+
+		worker_context[3] = context;
+		worker_program[3] = program;
 	}
 
-	cl_context context = OCL_ASSERT2(clCreateContext(0, 1, &device_id, NULL, NULL, &err));
 	cl_command_queue command_queue = OCL_ASSERT2(clCreateCommandQueue(context, device_id, 0, &err));
-
-	const char *source_names[] = {
-		"cl/common.h",
-		"cl/sha256_16.cl",
-		"cl/kernel_lfcs.cl" };
-	cl_program program = ocl_build_from_sources(sizeof(source_names) / sizeof(char *),
-		source_names, context, device_id, "-w -Werror -DSHA256_12");
-
 	cl_kernel kernel = OCL_ASSERT2(clCreateKernel(program, "test_lfcs", &err));
 
 	size_t local;
@@ -538,20 +605,27 @@ int ocl_brute_lfcs(cl_uint lfcs_template, cl_ushort newflag, const cl_uint *ver,
 				get_hp_time(&t1); td = hp_time_diff(&t0, &t1);
 				lfcs += out >> 16;
 				printf("got a hit: %s (rand: 0x%04x) at offset: %d\n", hexdump(&lfcs, 4, 0), out & 0xffff, fan);
-				u8 part1[0x1000]={0};
-				memcpy(part1, &lfcs, 4);
-				memcpy(part1+4, &newflag, 2);
-				FILE *f=fopen("movable_part1.sed","rb+");
-				if(f){
-					printf("existing movable_part1.sed found, adding lfcs...\n");
-					fwrite(part1, 1, 8, f);
-					fclose(f);
-				}
-				else{
-					printf("movable_part1.sed not found, generating a new one...\n");
-					dump_to_file("movable_part1.sed", part1, 0x1000);
-					printf("movable_part1.sed dumped to file\n");
-					printf("don't you dare forget to add the id0 to it!\n");
+				if (stdio_mode) {
+					u8 data[6]={0};
+					memcpy(data, &lfcs, 4);
+					memcpy(data+4, &newflag, 2);
+					printf("<<< %s\n", hexdump(&data, 6, 0));
+				} else {
+					u8 part1[0x1000]={0};
+					memcpy(part1, &lfcs, 4);
+					memcpy(part1+4, &newflag, 2);
+					FILE *f=fopen("movable_part1.sed","rb+");
+					if(f){
+						printf("existing movable_part1.sed found, adding lfcs...\n");
+						fwrite(part1, 1, 8, f);
+						fclose(f);
+					}
+					else{
+						printf("movable_part1.sed not found, generating a new one...\n");
+						dump_to_file("movable_part1.sed", part1, 0x1000);
+						printf("movable_part1.sed dumped to file\n");
+						printf("don't you dare forget to add the id0 to it!\n");
+					}
 				}
 
 				printf("done.\n\n");
@@ -565,6 +639,9 @@ int ocl_brute_lfcs(cl_uint lfcs_template, cl_ushort newflag, const cl_uint *ver,
 		}
 		k++;
 	}
+	if (!out && stdio_mode) {
+		printf("<<< NOHIT\n");
+	}
 	u64 tested = 0;
 	if (!out) {
 		tested = (1ull << brute_bits) * k;
@@ -576,8 +653,25 @@ int ocl_brute_lfcs(cl_uint lfcs_template, cl_ushort newflag, const cl_uint *ver,
 
 	clReleaseKernel(kernel);
 	clReleaseMemObject(mem_out);
-	clReleaseProgram(program);
 	clReleaseCommandQueue(command_queue);
-	clReleaseContext(context);
+	if (!worker_mode) {
+		clReleaseProgram(program);
+		clReleaseContext(context);
+	}
 	return !out;
+}
+
+void ocl_brute_free_worker() {
+	int i;
+	for (i = 0; i < 4; i++) {
+		if (worker_cid_program[i] != NULL) {
+			clReleaseProgram(worker_cid_program[i]);
+		}
+		if (worker_program[i] != NULL) {
+			clReleaseProgram(worker_program[i]);
+		}
+		if (worker_context[i] != NULL) {
+			clReleaseContext(worker_context[i]);
+		}
+	}
 }

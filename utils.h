@@ -49,11 +49,19 @@ uint32_t stop_bfcl;
 
 uint32_t seedminer_mode;
 
+uint32_t worker_mode;
+
+uint32_t stdio_mode;
+
 uint32_t reduced_work_size_mode;
 #else
 extern uint32_t stop_bfcl;
 
 extern uint32_t seedminer_mode;
+
+extern uint32_t worker_mode;
+
+extern uint32_t stdio_mode;
 
 extern uint32_t reduced_work_size_mode;
 #endif
