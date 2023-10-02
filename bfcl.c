@@ -123,6 +123,7 @@ void worker_loop() {
 		printf(">>> ");
 		fgets(buf, 256, stdin);
 		if (strlen(buf) == 255) while ((c = fgetc(stdin)) != EOF && c != '\n');
+		printf("\n");
 		argc = 1;
 		for (p=buf, arg=p; p<buf+256 && argc<=16; p++) {
 			if (*p == ' ' || *p == 0 || *p == '\r' || *p == '\n') {
