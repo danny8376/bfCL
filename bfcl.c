@@ -119,11 +119,12 @@ void worker_loop() {
 	char *argv[16], c, *p, *arg;
 	argv[0] = (char *)worker_dummy_argv0;
 	printf("worker mode enabled\n");
+	fflush(stdout);
 	while (1) {
-		printf(">>> ");
+		printf(">>>\n");
+		fflush(stdout);
 		fgets(buf, 256, stdin);
 		if (strlen(buf) == 255) while ((c = fgetc(stdin)) != EOF && c != '\n');
-		printf("\n");
 		argc = 1;
 		for (p=buf, arg=p; p<buf+256 && argc<=16; p++) {
 			if (*p == ' ' || *p == 0 || *p == '\r' || *p == '\n') {
@@ -145,6 +146,7 @@ void worker_loop() {
 		} else {
 			ret = parse_and_run(argc, (const char **)argv);
 			printf("||| %d\n", ret);
+			fflush(stdout);
 		}
 	}
 }
